@@ -1,9 +1,10 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QLabel, QCheckBox, QCalendarWidget,
-    QListWidget, QLineEdit, QPushButton, QHBoxLayout, QComboBox, QDialog
+    QListWidget, QLineEdit, QPushButton, QHBoxLayout, QComboBox, QDialog, QInputDialog
 )
 from PyQt5.QtCore import pyqtSignal, QDate
 from .abstract_builder import SchedulerUIBuilder
+import re
 
 class PyQtCalendarView(QWidget):
     date_selected = pyqtSignal(str)  # 追加: 日付選択シグナル
@@ -89,7 +90,7 @@ class TaskListDialog(QDialog):
 
 class PyQtTaskView(QWidget):
     # タスク追加イベントのシグナル
-    task_added = pyqtSignal(str)
+    task_added = pyqtSignal(str, float)  # (task_text, attr_ratio)
     date_changed = pyqtSignal(str)
     # 編集・削除・状態切替のシグナル
     task_delete_requested = pyqtSignal(int)
@@ -101,9 +102,11 @@ class PyQtTaskView(QWidget):
     # 新規: タスク選択追加用シグナル
     task_selected_to_add = pyqtSignal(str)
     open_task_list_requested = pyqtSignal()
+    # タスク属性比率変更シグナル
+    task_attr_ratio_change_requested = pyqtSignal(int, float)  # (index, new_ratio)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("Task View")
         self.setGeometry(100, 100, 800, 600)
 
@@ -174,6 +177,8 @@ class PyQtTaskView(QWidget):
 
         # タスクマスターリスト初期化
         self._task_master_list = []
+
+        self.task_list.itemDoubleClicked.connect(self.edit_attr_ratio_dialog)
 
     def set_task_master_list(self, task_master_list):
         # task_master_list: [{'text':..., 'attr':...}, ...]
@@ -248,6 +253,27 @@ class PyQtTaskView(QWidget):
             self.work_hours_display.setText("Work Hours: (not set)")
         else:
             self.work_hours_display.setText(f"Work Hours: {hours}")
+
+    def emit_task_added(self):
+        task_text = self.task_combo.currentText()
+        ratio_text = self.attr_ratio_input.text()
+        try:
+            attr_ratio = float(ratio_text)
+            attr_ratio = round(attr_ratio, 2)
+            if not (0 <= attr_ratio <= 100):
+                attr_ratio = None
+        except Exception:
+            attr_ratio = None
+        self.task_added.emit(task_text, attr_ratio)
+
+    def edit_attr_ratio_dialog(self, item):
+        index = self.task_list.row(item)
+        current_text = item.text()
+        m = re.search(r"\(([\d\.]+)%\)", current_text)
+        default = float(m.group(1)) if m else 0.0
+        ratio, ok = QInputDialog.getDouble(self, "体感割合の編集", "新しい体感割合(0.00～100.00):", default, 0, 100, 2)
+        if ok:
+            self.task_attr_ratio_change_requested.emit(index, ratio)
 
 class PyQtMainWindow(QMainWindow):
     def __init__(self, calendar_view, task_view):

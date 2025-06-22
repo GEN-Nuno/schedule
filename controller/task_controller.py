@@ -1,7 +1,6 @@
 import os
 import json
 from model.task_model import TaskModel
-from PyQt5.QtWidgets import QApplication
 from view.pyqt_builder import TaskListDialog
 
 INIT_CONF_PATH = os.path.join(os.path.dirname(__file__), '..', 'init.conf')
@@ -11,8 +10,8 @@ class AddTaskCommand:
     def __init__(self, model):
         self.model = model
 
-    def execute(self, date_str, task_text):
-        self.model.add_task(date_str, task_text)
+    def execute(self, date_str, task_text, attr_ratio=None):
+        self.model.add_task(date_str, task_text, attr_ratio)
 
 # ControllerはObserverとしてViewのイベントを受信し、Commandで処理を委譲
 class TaskController:
@@ -36,6 +35,7 @@ class TaskController:
         # 編集・削除・状態切替のシグナルを接続
         self.task_view.task_delete_requested.connect(self.handle_delete_task)
         self.task_view.task_state_change_requested.connect(self.handle_change_task_state)
+        self.task_view.task_attr_ratio_change_requested.connect(self.handle_change_task_attr_ratio)
         # 勤務時間関連シグナル
         self.task_view.work_hours_saved.connect(self.handle_save_work_hours)
         self.task_view.work_hours_deleted.connect(self.handle_delete_work_hours)
@@ -46,9 +46,9 @@ class TaskController:
         self.task_view.task_selected_to_add.connect(self.handle_add_task_from_master)
         self.task_view.open_task_list_requested.connect(self.open_task_list_window)
 
-    def handle_add_task(self, task_text):
+    def handle_add_task(self, task_text, attr_ratio=None):
         # Commandパターン: タスク追加処理を委譲
-        self.add_task_command.execute(self.current_date, task_text)
+        self.add_task_command.execute(self.current_date, task_text, attr_ratio)
         self.save_conf()
 
     def handle_date_changed(self, date_str):
@@ -61,6 +61,10 @@ class TaskController:
 
     def handle_change_task_state(self, index, new_state):
         self.model.set_task_state(self.current_date, index, new_state)
+        self.save_conf()
+
+    def handle_change_task_attr_ratio(self, index, new_ratio):
+        self.model.set_task_attr_ratio(self.current_date, index, new_ratio)
         self.save_conf()
 
     def handle_save_work_hours(self, hours):
@@ -77,8 +81,8 @@ class TaskController:
         self.save_conf()
 
     def handle_add_task_from_master(self, task_text):
-        # マスターリストから選択して追加
-        self.add_task_command.execute(self.current_date, task_text)
+        # マスターリストから選択して追加（attr_ratioはNone）
+        self.add_task_command.execute(self.current_date, task_text, None)
         self.save_conf()
 
     def load_conf(self):
@@ -127,8 +131,11 @@ class TaskController:
     def update_view(self, tasks):
         self.task_view.task_list.clear()
         for t in tasks:
-            # 状態を表示に含める
-            self.task_view.task_list.addItem(f"{t['text']} [{t['state']}]")
+            # 状態とattr_ratioを表示に含める
+            ratio_str = ""
+            if t.get("attr_ratio") is not None:
+                ratio_str = f" ({t['attr_ratio']}%)"
+            self.task_view.task_list.addItem(f"{t['text']} [{t['state']}]"+ratio_str)
         # 勤務時間表示も更新
         hours = self.model.get_work_hours(self.current_date)
         self.task_view.set_work_hours_display(hours)
